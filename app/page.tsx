@@ -12,7 +12,8 @@ import {
   Trash2,
   Grid3X3,
   Type,
-  Download
+  Download,
+  CornerDownLeft
 } from 'lucide-react';
 
 // ============================================================================
@@ -591,6 +592,7 @@ export default function HieroglyphicEditor() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [zoom, setZoom] = useState(0.3); // View zoom level (not copy scale)
+  const [currentLineOffset, setCurrentLineOffset] = useState(0);
 
   const editorRef = useRef<SVGSVGElement>(null);
 
@@ -631,26 +633,36 @@ export default function HieroglyphicEditor() {
       try {
         const response = await fetch(`/${sign.code}.svg`);
         const text = await response.text();
-        // Extract inner content from <svg>...</svg>
         const parser = new DOMParser();
         const doc = parser.parseFromString(text, 'image/svg+xml');
         const svgElement = doc.querySelector('svg');
+
         if (svgElement) {
-          svgContent = svgElement.innerHTML;
+          // 1. Extract the original viewBox (or fallback to width/height)
+          const vBox = svgElement.getAttribute('viewBox');
+          const w = svgElement.getAttribute('width');
+          const h = svgElement.getAttribute('height');
+          const originalViewBox = vBox ? vBox : (w && h ? `0 0 ${w} ${h}` : '0 0 1800 1800');
+
+          // 2. Wrap the content in a nested SVG to force scaling and centering
+          svgContent = `<svg viewBox="${originalViewBox}" width="1800" height="1800" preserveAspectRatio="xMidYMid meet">${svgElement.innerHTML}</svg>`;
         }
       } catch (err) {
         console.error('Failed to fetch SVG:', err);
-        svgContent = '<text x="500" y="1000" font-size="200">Error</text>';
+        svgContent = '<text x="900" y="900" text-anchor="middle" font-size="200">Error</text>';
       }
     }
+
+    const lastOnLine = glyphs.filter(g => g.y === currentLineOffset).pop();
+    const x = lastOnLine ? lastOnLine.x + 2000 : 0;
 
     const newGlyph: GlyphInstance = {
       id: generateId(),
       signCode: sign.code,
       name: sign.name,
       svgContent: svgContent,
-      x: glyphs.length * 2000, // Horizontal flow
-      y: 0,
+      x: x,
+      y: currentLineOffset,
       rotation: 0,
       scale: 1,
       flipH: false,
@@ -658,8 +670,11 @@ export default function HieroglyphicEditor() {
     };
 
     setGlyphs([...glyphs, newGlyph]);
-    // Auto-select new glyph
     setSelectedIds(new Set([newGlyph.id]));
+  };
+
+  const addLineBreak = () => {
+    setCurrentLineOffset(prev => prev + 2200);
   };
 
   const updateSelectedGlyphs = (updates: Partial<GlyphInstance>) => {
@@ -753,37 +768,35 @@ export default function HieroglyphicEditor() {
           const blob = await item.getType('text/html');
           const html = await blob.text();
 
-          // Parse SVG
           const parser = new DOMParser();
           const doc = parser.parseFromString(html, 'text/html');
           const svgElement = doc.querySelector('svg');
 
           if (svgElement) {
-            // Extract glyphs - simplified: look for groups or paths
-            // In full implementation, match against known glyph paths
-            const paths = svgElement.querySelectorAll('path, circle, ellipse, line');
+            // Keep the original viewBox logic for pasted SVGs too
+            const vBox = svgElement.getAttribute('viewBox');
+            const w = svgElement.getAttribute('width');
+            const h = svgElement.getAttribute('height');
+            const originalViewBox = vBox ? vBox : (w && h ? `0 0 ${w} ${h}` : '0 0 1800 1800');
 
-            if (paths.length > 0) {
-              // Create a generic "pasted" glyph or try to match codes
-              const pastedContent = Array.from(paths).map(p => p.outerHTML).join('');
+            const pastedContent = `<svg viewBox="${originalViewBox}" width="1800" height="1800" preserveAspectRatio="xMidYMid meet">${svgElement.innerHTML}</svg>`;
 
-              const newGlyph: GlyphInstance = {
-                id: generateId(),
-                signCode: 'PASTED',
-                name: 'External SVG',
-                svgContent: pastedContent,
-                x: glyphs.length * 2000,
-                y: 0,
-                rotation: 0,
-                scale: 1,
-                flipH: false,
-                flipV: false
-              };
+            const newGlyph: GlyphInstance = {
+              id: generateId(),
+              signCode: 'PASTED',
+              name: 'External SVG',
+              svgContent: pastedContent,
+              x: glyphs.length * 2000, // Or whatever logic you prefer
+              y: currentLineOffset,
+              rotation: 0,
+              scale: 1,
+              flipH: false,
+              flipV: false
+            };
 
-              setGlyphs(prev => [...prev, newGlyph]);
-              setSelectedIds(new Set([newGlyph.id]));
-              return;
-            }
+            setGlyphs(prev => [...prev, newGlyph]);
+            setSelectedIds(new Set([newGlyph.id]));
+            return;
           }
         }
 
@@ -833,13 +846,16 @@ export default function HieroglyphicEditor() {
 
   // Calculate viewBox for editor
   const maxX = glyphs.length > 0
-    ? Math.max(...glyphs.map(g => g.x + 2000))
-    : 2000;
-  const viewBoxWidth = Math.max(4000, maxX);
-  const viewBoxHeight = 2500;
+    ? Math.max(...glyphs.map(g => g.x + 2500))
+    : 4000;
+  const maxY = glyphs.length > 0
+    ? Math.max(...glyphs.map(g => g.y + 2500))
+    : 3000;
+  const viewBoxWidth = maxX;
+  const viewBoxHeight = maxY;
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="h-screen bg-gray-50 flex flex-col overflow-hidden">
       {/* Header */}
       <header className="bg-slate-900 text-white p-4 shadow-lg">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
@@ -873,7 +889,7 @@ export default function HieroglyphicEditor() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Sidebar - Glyph Library */}
         <aside className="w-80 bg-white border-r border-gray-200 flex flex-col">
           <div className="p-4 border-b border-gray-200">
@@ -890,7 +906,7 @@ export default function HieroglyphicEditor() {
             />
           </div>
 
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
             {filteredLibrary.map((sign) => (
               <button
                 key={sign.code}
@@ -930,7 +946,7 @@ export default function HieroglyphicEditor() {
         </aside>
 
         {/* Main Editor Area */}
-        <main className="flex-1 flex flex-col bg-gray-100">
+        <main className="flex-1 flex flex-col min-h-0 min-w-0 bg-gray-100">
           {/* Toolbar */}
           <div className="bg-white border-b border-gray-200 p-3 flex items-center gap-4 flex-wrap shadow-sm">
             {/* Selection Controls */}
@@ -964,7 +980,7 @@ export default function HieroglyphicEditor() {
               </span>
               <button
                 onClick={() => rotateSelected(90)}
-                disabled={isMounted ? isNothingSelected : true}
+                disabled={isNothingSelected}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Rotate 90°"
               >
@@ -972,7 +988,7 @@ export default function HieroglyphicEditor() {
               </button>
               <button
                 onClick={() => rotateSelected(180)}
-                disabled={isMounted ? isNothingSelected : true}
+                disabled={isNothingSelected}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Rotate 180°"
               >
@@ -980,7 +996,7 @@ export default function HieroglyphicEditor() {
               </button>
               <button
                 onClick={flipSelectedH}
-                disabled={isMounted ? isNothingSelected : true}
+                disabled={isNothingSelected}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Flip Horizontal"
               >
@@ -988,7 +1004,7 @@ export default function HieroglyphicEditor() {
               </button>
               <button
                 onClick={flipSelectedV}
-                disabled={isMounted ? isNothingSelected : true}
+                disabled={isNothingSelected}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Flip Vertical"
               >
@@ -1004,7 +1020,7 @@ export default function HieroglyphicEditor() {
               </span>
               <button
                 onClick={() => scaleSelected(0.8)}
-                disabled={isMounted ? isNothingSelected : true}
+                disabled={isNothingSelected}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Scale Down"
               >
@@ -1012,7 +1028,7 @@ export default function HieroglyphicEditor() {
               </button>
               <button
                 onClick={() => scaleSelected(1.25)}
-                disabled={isMounted ? isNothingSelected : true}
+                disabled={isNothingSelected}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Scale Up"
               >
@@ -1026,18 +1042,33 @@ export default function HieroglyphicEditor() {
             <div className="flex items-center gap-2">
               <button
                 onClick={duplicateSelected}
-                disabled={isMounted ? isNothingSelected : true}
+                disabled={isNothingSelected}
                 className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors flex items-center gap-1"
               >
                 Duplicate
               </button>
               <button
                 onClick={deleteSelected}
-                disabled={isMounted ? isNothingSelected : true}
+                disabled={isNothingSelected}
                 className="p-2 bg-red-100 hover:bg-red-200 text-red-700 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Delete"
               >
                 <Trash2 size={18} />
+              </button>
+            </div>
+
+
+            <div className="w-px h-8 bg-gray-300" />
+
+            {/* Layout Controls */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={addLineBreak}
+                className="px-3 py-1.5 text-sm bg-indigo-600 hover:bg-indigo-500 text-white rounded shadow-sm transition-colors flex items-center gap-2"
+                title="New Line"
+              >
+                <CornerDownLeft size={16} />
+                New Line
               </button>
             </div>
 
@@ -1066,103 +1097,109 @@ export default function HieroglyphicEditor() {
             </div>
           </div>
 
-          {/* SVG Canvas */}
-          <div className="flex-1 overflow-auto p-8 bg-gray-200">
+          {/* SVG Canvas Area */}
+          {/* SVG Canvas Area */}
+          <div className="flex-1 overflow-auto bg-gray-200 custom-scrollbar">
             <div
-              className="bg-white shadow-lg rounded-lg overflow-hidden inline-block"
-              style={{
-                transform: `scale(${zoom})`,
-                transformOrigin: 'top left',
-                transition: 'transform 0.2s ease'
-              }}
+              className="min-w-full min-h-full flex p-16"
+              style={{ padding: '64px' }}
             >
-              <svg
-                ref={editorRef}
-                width={viewBoxWidth}
-                height={viewBoxHeight}
-                viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
-                className="block"
-                style={{ minWidth: viewBoxWidth, minHeight: viewBoxHeight }}
+              <div
+                className="bg-white shadow-2xl rounded-lg overflow-hidden m-auto flex-shrink-0"
+                style={{
+                  width: viewBoxWidth * zoom,
+                  height: viewBoxHeight * zoom,
+                  transition: 'width 0.2s ease, height 0.2s ease'
+                }}
               >
-                {/* Grid Background */}
-                <defs>
-                  <pattern id="grid" width="200" height="200" patternUnits="userSpaceOnUse">
-                    <path d="M 200 0 L 0 0 0 200" fill="none" stroke="#e5e7eb" strokeWidth="1" />
-                  </pattern>
-                  <pattern id="quadrat-grid" width="1800" height="1800" patternUnits="userSpaceOnUse">
-                    <rect width="1800" height="1800" fill="none" stroke="#d1d5db" strokeWidth="2" />
-                    <line x1="900" y1="0" x2="900" y2="1800" stroke="#9ca3af" strokeWidth="1" strokeDasharray="10,10" />
-                    <line x1="0" y1="900" x2="1800" y2="900" stroke="#9ca3af" strokeWidth="1" strokeDasharray="10,10" />
-                  </pattern>
-                </defs>
+                <svg
+                  ref={editorRef}
+                  width="100%"
+                  height="100%"
+                  viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
+                  className="block"
+                  fill="black"
+                >
+                  {/* Grid Background */}
+                  <defs>
+                    <pattern id="grid" width="200" height="200" patternUnits="userSpaceOnUse">
+                      <path d="M 200 0 L 0 0 0 200" fill="none" stroke="#e5e7eb" strokeWidth="1" />
+                    </pattern>
+                    <pattern id="quadrat-grid" width="1800" height="1800" patternUnits="userSpaceOnUse">
+                      <rect width="1800" height="1800" fill="none" stroke="#d1d5db" strokeWidth="2" />
+                      <line x1="900" y1="0" x2="900" y2="1800" stroke="#9ca3af" strokeWidth="1" strokeDasharray="10,10" />
+                      <line x1="0" y1="900" x2="1800" y2="900" stroke="#9ca3af" strokeWidth="1" strokeDasharray="10,10" />
+                    </pattern>
+                  </defs>
 
-                <rect width="100%" height="100%" fill="url(#grid)" />
-                <rect width={viewBoxWidth} height={viewBoxHeight} fill="url(#quadrat-grid)" opacity="0.5" />
+                  <rect width="100%" height="100%" fill="url(#grid)" />
+                  <rect width={viewBoxWidth} height={viewBoxHeight} fill="url(#quadrat-grid)" opacity="0.5" />
 
-                {/* Glyphs */}
-                {glyphs.map((glyph) => {
-                  const isSelected = selectedIds.has(glyph.id);
-                  const transform = createTransformString(
-                    glyph.x,
-                    glyph.y,
-                    glyph.rotation,
-                    glyph.scale,
-                    glyph.flipH,
-                    glyph.flipV
-                  );
+                  {/* Glyphs */}
+                  {glyphs.map((glyph) => {
+                    const isSelected = selectedIds.has(glyph.id);
+                    const transform = createTransformString(
+                      glyph.x,
+                      glyph.y,
+                      glyph.rotation,
+                      glyph.scale,
+                      glyph.flipH,
+                      glyph.flipV
+                    );
 
-                  return (
-                    <g key={glyph.id} transform={transform}>
-                      {/* Selection Box */}
-                      {isSelected && (
+                    return (
+                      <g key={glyph.id} transform={transform}>
+                        {/* Selection Box */}
+                        {isSelected && (
+                          <rect
+                            x="-100"
+                            y="-100"
+                            width="2000"
+                            height="2000"
+                            fill="none"
+                            stroke="#3b82f6"
+                            strokeWidth="40"
+                            strokeDasharray="100,50"
+                            opacity="0.8"
+                          />
+                        )}
+
+                        {/* Hit Area (invisible, larger for easier clicking) */}
                         <rect
-                          x="-100"
-                          y="-100"
-                          width="2000"
-                          height="2000"
-                          fill="none"
-                          stroke="#3b82f6"
-                          strokeWidth="40"
-                          strokeDasharray="100,50"
-                          opacity="0.8"
+                          x="0"
+                          y="0"
+                          width="1800"
+                          height="1800"
+                          fill="transparent"
+                          className="cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSelection(glyph.id);
+                          }}
                         />
-                      )}
 
-                      {/* Hit Area (invisible, larger for easier clicking) */}
-                      <rect
-                        x="0"
-                        y="0"
-                        width="1800"
-                        height="1800"
-                        fill="transparent"
-                        className="cursor-pointer"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleSelection(glyph.id);
-                        }}
-                      />
+                        {/* Glyph Content */}
+                        <g dangerouslySetInnerHTML={{ __html: glyph.svgContent }} />
 
-                      {/* Glyph Content */}
-                      <g dangerouslySetInnerHTML={{ __html: glyph.svgContent }} />
-
-                      {/* Sign Code Label (when selected or zoomed out) */}
-                      {(isSelected || zoom < 0.2) && (
-                        <text
-                          x="900"
-                          y="-150"
-                          textAnchor="middle"
-                          fontSize="120"
-                          fontFamily="monospace"
-                          fill={isSelected ? "#3b82f6" : "#6b7280"}
-                          fontWeight="bold"
-                        >
-                          {glyph.signCode}
-                        </text>
-                      )}
-                    </g>
-                  );
-                })}
-              </svg>
+                        {/* Sign Code Label (when selected or zoomed out) */}
+                        {(isSelected || zoom < 0.2) && (
+                          <text
+                            x="900"
+                            y="-150"
+                            textAnchor="middle"
+                            fontSize="120"
+                            fontFamily="monospace"
+                            fill={isSelected ? "#3b82f6" : "#6b7280"}
+                            fontWeight="bold"
+                          >
+                            {glyph.signCode}
+                          </text>
+                        )}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
             </div>
           </div>
 
