@@ -597,6 +597,8 @@ export default function HieroglyphicEditor() {
   const [isMounted, setIsMounted] = useState(false);
   useEffect(() => setIsMounted(true), []);
 
+  const isNothingSelected = selectedIds.size === 0;
+
   // Filtered library
   const filteredLibrary = GLYPH_LIBRARY.filter(g =>
     g.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -962,7 +964,7 @@ export default function HieroglyphicEditor() {
               </span>
               <button
                 onClick={() => rotateSelected(90)}
-                disabled={!isMounted || selectedIds.size === 0}
+                disabled={isMounted ? isNothingSelected : true}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Rotate 90°"
               >
@@ -970,7 +972,7 @@ export default function HieroglyphicEditor() {
               </button>
               <button
                 onClick={() => rotateSelected(180)}
-                disabled={!isMounted || selectedIds.size === 0}
+                disabled={isMounted ? isNothingSelected : true}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Rotate 180°"
               >
@@ -978,7 +980,7 @@ export default function HieroglyphicEditor() {
               </button>
               <button
                 onClick={flipSelectedH}
-                disabled={!isMounted || selectedIds.size === 0}
+                disabled={isMounted ? isNothingSelected : true}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Flip Horizontal"
               >
@@ -986,7 +988,7 @@ export default function HieroglyphicEditor() {
               </button>
               <button
                 onClick={flipSelectedV}
-                disabled={!isMounted || selectedIds.size === 0}
+                disabled={isMounted ? isNothingSelected : true}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Flip Vertical"
               >
@@ -1002,7 +1004,7 @@ export default function HieroglyphicEditor() {
               </span>
               <button
                 onClick={() => scaleSelected(0.8)}
-                disabled={!isMounted || selectedIds.size === 0}
+                disabled={isMounted ? isNothingSelected : true}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Scale Down"
               >
@@ -1010,7 +1012,7 @@ export default function HieroglyphicEditor() {
               </button>
               <button
                 onClick={() => scaleSelected(1.25)}
-                disabled={!isMounted || selectedIds.size === 0}
+                disabled={isMounted ? isNothingSelected : true}
                 className="p-2 bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Scale Up"
               >
@@ -1024,14 +1026,14 @@ export default function HieroglyphicEditor() {
             <div className="flex items-center gap-2">
               <button
                 onClick={duplicateSelected}
-                disabled={!isMounted || selectedIds.size === 0}
+                disabled={isMounted ? isNothingSelected : true}
                 className="px-3 py-1.5 text-sm bg-gray-100 hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors flex items-center gap-1"
               >
                 Duplicate
               </button>
               <button
                 onClick={deleteSelected}
-                disabled={!isMounted || selectedIds.size === 0}
+                disabled={isMounted ? isNothingSelected : true}
                 className="p-2 bg-red-100 hover:bg-red-200 text-red-700 disabled:opacity-30 disabled:cursor-not-allowed rounded transition-colors"
                 title="Delete"
               >
